@@ -1,4 +1,11 @@
-venv/
+src/end2end/.compile_cache
+src/end2end/build
+src/end2end/dist
+src/end2end/end2end
+src/end2end/spatha_mod
+src/end2end/spatha.egg-info
+src/end2end/sten
+venom/
 *.pyc
 __pycache__/
 .DS_Store

@@ -1,5 +1,14 @@
 import torch
+import scipy
+import sten
 
+class MyCscTensor:
+    def __init__(self, data):
+        self.data = data
+
+    def to_dense(self):
+        return torch.from_numpy(self.data.todense())
+    
 def calculate_sparse_ratio(matrix):
     """
     计算矩阵的稀疏比率。
@@ -23,6 +32,17 @@ def calculate_sparse_ratio(matrix):
     
     return sparse_ratio
 
+def convert_to_csc(matrix):
+    """
+    将密集矩阵转换为CSC格式的函数。
+    """
+    # 这里仅返回原始矩阵作为演示，实际上N:M转换需要专门的逻辑和可能的硬件支持
+    return sten.SparseTensorWrapper.wrapped_from_dense(
+        MyCscTensor(scipy.sparse.csc_matrix(matrix)),
+        matrix,
+        None
+    )
+
 def convert_to_nm(matrix):
     """
     将密集矩阵转换为N:M格式的示例函数。
@@ -31,12 +51,25 @@ def convert_to_nm(matrix):
     # 这里仅返回原始矩阵作为演示，实际上N:M转换需要专门的逻辑和可能的硬件支持
     return matrix
 
+# 自定义稀疏运算符，整合到了torch原有的自动求导框架中，可以求梯度
+@sten.register_fwd_op_impl(
+    operator=torch.mm,
+    inp=(MyCscTensor, torch.Tensor),
+    out=[(sten.KeepAll, torch.Tensor)],
+)
+def torch_mm_fwd_impl(ctx, inputs, output_sparsifiers):
+    print("csc-dense mul")
+    input1, input2 = inputs
+    ctx.save_for_backward(input1, input2)
+    output = torch.from_numpy(input1.wrapped_tensor.data @ input2.numpy())
+    return output
+
 def process_matrix(matrix):
     sparse_ratio = calculate_sparse_ratio(matrix)
     print(f"稀疏比率: {sparse_ratio}%")
     if sparse_ratio > 75:
-        print("转换为CSR格式")
-        return matrix.to_sparse_csr()
+        print("转换为CSC格式")
+        return convert_to_csc(matrix)
     else:
         print("转换为N:M格式")
         return convert_to_nm(matrix)
@@ -49,7 +82,7 @@ def process_matrix(matrix):
 #################                     测试代码                      #################
 ####################################################################################
     
-# 测试将矩阵转为CSR
+# 测试将矩阵转为CSC
 # 示例矩阵
 matrix = torch.tensor([[0, 0, 3, 0, 0], 
                        [0, 0, 0, 4, 0], 
@@ -59,4 +92,11 @@ matrix = torch.tensor([[0, 0, 3, 0, 0],
 
 # 处理矩阵
 sparse_matrix = process_matrix(matrix)
+a = torch.rand(5,5)
 print(sparse_matrix)
+
+spase_result = torch.mm(sparse_matrix, a)
+dense_result = torch.mm(matrix, a)
+
+print("sparse result: ", spase_result)
+print("dense result: ", dense_result)
