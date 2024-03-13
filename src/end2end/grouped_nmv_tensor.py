@@ -675,22 +675,84 @@ def to_sparse_sr_nm(dense_shape, dense_dtype, n, m, tileM):
     ]
     return lib.func2
 
+# class SrNMTensor:
+#     def __init__(self, n_, m_, tileM_, dense_, mask_, columns_):
+#         self.n = n_
+#         self.m = m_
+#         self.tileM = tileM_
+#         self.nnz = 0
+#         self.nrows = None
+#         self.ncols = None
+#         #self.dense = dense_
+#         #self.mask = mask_
+#         self.columns = columns_        
+#         self.data = None
+#         self.metadata = None       
+#         self.to_sparse_sr_nm(dense_, mask_) 
+#         #self.dense = None
+    
+#     def to_sparse_sr_nm(self, dense_, mask_):
+#         impl_builder = (
+#             to_sparse_sr_nm
+#             )
+#         func = impl_builder(
+#                 dense_.shape,
+#                 dense_.dtype,
+#                 self.n,
+#                 self.m,
+#                 self.tileM
+#             )
+        
+#         self.nrows, self.ncols = dense_.shape
+#         A_num_cols_sp_pad = round_up((round_up(self.ncols, self.m)/self.m)*self.n, 16)
+#         self.nnz = self.nrows*A_num_cols_sp_pad
+#         m_fixed = 4
+#         mrow_m = 2
+#         bits_elem_meta=2
+
+#         nelems = 32//bits_elem_meta #32=(sizeof(uint)*8)
+#         nelems_col = nelems//mrow_m
+
+#         self.values = torch.zeros(self.nrows * A_num_cols_sp_pad, dtype=dense_.dtype)
+#         self.metadata = torch.zeros(self.nrows//mrow_m * A_num_cols_sp_pad//nelems_col, dtype=torch.int32)
+
+#         func(dense_.data_ptr(), mask_.data_ptr(), self.values.data_ptr(), self.columns.data_ptr(), self.metadata.data_ptr())     
+
+#     def to_dense(self):
+#         impl_builder = (
+#             to_dense
+#             )
+#         func = impl_builder(
+#                 (self.nrows, self.ncols),
+#                 self.values.dtype,
+#                 self.n,
+#                 self.m,
+#                 self.tileM
+#             )
+#         dense = torch.zeros((self.nrows, self.ncols), dtype=self.values.dtype)
+#         func(dense.data_ptr(), self.values.data_ptr(), self.columns.data_ptr(), self.metadata.data_ptr())
+
+#         return dense
+
 class SrNMTensor:
-    def __init__(self, n_, m_, tileM_, dense_, mask_, columns_):
+    def __init__(self, n_, m_, tileM_, dense_, mask_, columns_, device_):
         self.n = n_
         self.m = m_
         self.tileM = tileM_
         self.nnz = 0
         self.nrows = None
         self.ncols = None
-        #self.dense = dense_
-        #self.mask = mask_
-        self.columns = columns_        
-        self.data = None
-        self.metadata = None       
-        self.to_sparse_sr_nm(dense_, mask_) 
+        self.dense = dense_
+        self.device=device_
+        self.mask = mask_
+        self.columns = columns_
+        self.values = None
+        self.metadata = None
+
+        self.to_sparse_sr_nm(dense_.cpu().to(dtype=torch.float32), mask_)
+        #self.to_sparse_sr_nm(dense_.to(dtype=torch.float32), mask_)
         #self.dense = None
-    
+
     def to_sparse_sr_nm(self, dense_, mask_):
         impl_builder = (
             to_sparse_sr_nm
@@ -702,7 +764,7 @@ class SrNMTensor:
                 self.m,
                 self.tileM
             )
-        
+
         self.nrows, self.ncols = dense_.shape
         A_num_cols_sp_pad = round_up((round_up(self.ncols, self.m)/self.m)*self.n, 16)
         self.nnz = self.nrows*A_num_cols_sp_pad
@@ -713,10 +775,14 @@ class SrNMTensor:
         nelems = 32//bits_elem_meta #32=(sizeof(uint)*8)
         nelems_col = nelems//mrow_m
 
-        self.values = torch.zeros(self.nrows * A_num_cols_sp_pad, dtype=dense_.dtype)
+        self.values = torch.zeros(self.nrows * A_num_cols_sp_pad, dtype=torch.float32) #dense_.dtype
         self.metadata = torch.zeros(self.nrows//mrow_m * A_num_cols_sp_pad//nelems_col, dtype=torch.int32)
 
-        func(dense_.data_ptr(), mask_.data_ptr(), self.values.data_ptr(), self.columns.data_ptr(), self.metadata.data_ptr())     
+        func(dense_.data_ptr(), mask_.data_ptr(), self.values.data_ptr(), self.columns.data_ptr(), self.metadata.data_ptr())
+
+        self.columns  = self.columns.to(device=self.device)
+        self.metadata = self.metadata.to(device=self.device)
+        self.values   = self.values.to(device=self.device).half()
 
     def to_dense(self):
         impl_builder = (
@@ -724,15 +790,18 @@ class SrNMTensor:
             )
         func = impl_builder(
                 (self.nrows, self.ncols),
-                self.values.dtype,
+                torch.float32, #self.values.dtype,
                 self.n,
                 self.m,
                 self.tileM
             )
-        dense = torch.zeros((self.nrows, self.ncols), dtype=self.values.dtype)
-        func(dense.data_ptr(), self.values.data_ptr(), self.columns.data_ptr(), self.metadata.data_ptr())
+        # initialize with ones
+        dense = torch.ones((self.nrows, self.ncols), dtype=torch.float32, device='cpu') #self.values.dtype
 
-        return dense
+        # uncomment to keep initial values
+        #func(dense.data_ptr(), self.values.cpu().to(dtype=torch.float32).data_ptr(), self.columns.cpu().data_ptr(), self.metadata.cpu().data_ptr())
+
+        return dense.to(device=self.device).half()
 
 def nm_vector_mask_sparsify(tensor, n, m, tileM):
     #print("nm_vector_mask_sparsify", n, m, tileM)

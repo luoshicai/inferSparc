@@ -58,8 +58,9 @@ def convert_to_nm(tensor):
     """
     n=2; m=4; tileM=128
     masks, columns = nm_vector_mask_sparsify(tensor, n, m, tileM)
+    print("tensor.device: ", tensor.device)
     return sten.SparseTensorWrapper.wrapped_from_dense(
-        SrNMTensor(n, m, tileM, tensor, masks, columns),
+        SrNMTensor(n, m, tileM, tensor, masks, columns, tensor.device),
         tensor,
         None,
     )
@@ -132,32 +133,8 @@ def process_matrix(matrix):
 
 
 ####################################################################################
-#################                     测试代码                      #################
+#################                   功能测试代码                    #################
 ####################################################################################
-def generate_sparse_matrix(rows, cols, sparsity):
-    # 计算非零元素的数量
-    num_nonzeros = int(rows * cols * (1 - sparsity))
-
-    # 生成非零元素的随机索引
-    nonzero_indices = np.random.choice(rows * cols, num_nonzeros, replace=False)
-
-    # 创建一个全零张量
-    matrix = torch.zeros((rows, cols))
-
-    # 在随机索引位置填充非零元素
-    for idx in nonzero_indices:
-        row_idx = idx // cols
-        col_idx = idx % cols
-        # 生成非零元素的值
-        value = torch.rand(1)
-        # 填充非零元素
-        matrix[row_idx, col_idx] = value
-
-    return matrix
-
-
-
-
 # # 测试将矩阵转为CSC
 # matrix = torch.tensor([[0, 0, 3, 0, 0], 
 #                        [0, 0, 0, 4, 0], 
@@ -182,46 +159,75 @@ def generate_sparse_matrix(rows, cols, sparsity):
 # print("sparse result1: ", spase_result1)
 # print("dense result1: ", dense_result1)
 
-# #测试哪种实现方式更快
-# a = generate_sparse_matrix(1024, 4096, 0.9)
-# b = torch.randn(4096, 1024)
-# test_tensor = scipy.sparse.csc_matrix(a)
 
-# start_time = time.time()
-# for _ in range(100):
-#     torch.mm(a,b)
-# end_time = time.time()
-# execution_time = end_time - start_time
-# print("普通torch.mm程序执行时间: ", execution_time, "秒")
+####################################################################################
+#################                   性能测试代码                    #################
+####################################################################################
+def generate_sparse_matrix(rows, cols, sparsity):
+    # 计算非零元素的数量
+    num_nonzeros = int(rows * cols * (1 - sparsity))
 
-# start_time = time.time()
-# for _ in range(100):
-#     torch.from_numpy(test_tensor @ b.numpy())
-# end_time = time.time()
-# execution_time = end_time - start_time
-# print("np程序执行时间: ", execution_time, "秒")
+    # 生成非零元素的随机索引
+    nonzero_indices = np.random.choice(rows * cols, num_nonzeros, replace=False)
 
-# start_time = time.time()
-# for _ in range(100):
-#     test_tensor.dot(b)
-# end_time = time.time()
-# execution_time = end_time - start_time
-# print("scipy程序执行时间: ", execution_time, "秒")
+    # 创建一个全零张量
+    matrix = torch.zeros((rows, cols))
 
-#测试哪种实现方式更快
-a = generate_sparse_matrix(1024, 4096, 0.5)
-b = torch.randn(4096, 1024)
-test_tensor = process_matrix(a)
+    # 在随机索引位置填充非零元素
+    for idx in nonzero_indices:
+        row_idx = idx // cols
+        col_idx = idx % cols
+        # 生成非零元素的值
+        value = torch.rand(1)
+        # 填充非零元素
+        matrix[row_idx, col_idx] = value
+
+    return matrix
+
+#测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
+a = generate_sparse_matrix(4096, 4096, 0.9)
+b = torch.randn(4096, 4096)
+test_tensor = scipy.sparse.csc_matrix(a)
 
 start_time = time.time()
-torch.mm(a,b)
+for _ in range(100):
+    torch.mm(a,b)
 end_time = time.time()
 execution_time = end_time - start_time
 print("普通torch.mm程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
-torch.mm(test_tensor, b)
+for _ in range(100):
+    torch.from_numpy(test_tensor @ b.numpy())
 end_time = time.time()
 execution_time = end_time - start_time
-print("spatha程序执行时间: ", execution_time, "秒")
+print("np程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+for _ in range(100):
+    test_tensor.dot(b)
+end_time = time.time()
+execution_time = end_time - start_time
+print("scipy程序执行时间: ", execution_time, "秒")
+
+# #测试spatha和普通torch.mm哪种实现方式更快
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# print(device)
+# a = generate_sparse_matrix(4096, 4096, 0.5)
+# b = torch.randn(4096, 4096)
+# a.to(device)
+# b.to(device)
+# test_tensor = process_matrix(a)
+
+# start_time = time.time()
+# torch.mm(a,b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("普通torch.mm程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(test_tensor, b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("spatha程序执行时间: ", execution_time, "秒")
 
