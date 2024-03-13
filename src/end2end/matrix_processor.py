@@ -184,12 +184,23 @@ def generate_sparse_matrix(rows, cols, sparsity):
 
     return matrix
 
-#测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
-a = generate_sparse_matrix(4096, 4096, 0.98)
-b = torch.randn(4096, 4096)
+# 测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
+nums = 1024
+a = generate_sparse_matrix(nums, nums, 0.9)
+b = torch.randn(nums, nums)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-test_tensor = scipy.sparse.csc_matrix(a)
+
+# 转化为CSC格式
+csc_tensor = scipy.sparse.csc_matrix(a)
+
+# 转化为CSR格式
+csr_tensor = scipy.sparse.csr_matrix(a)
+
+# 转化为COO格式
+nonzero_indices = a.nonzero().t()
+values = a[nonzero_indices[0], nonzero_indices[1]]
+coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, a.size())
+
 a.to(device)
 b.to(device)
 
@@ -200,16 +211,22 @@ execution_time = end_time - start_time
 print("普通torch.mm程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
-torch.from_numpy(test_tensor @ b.numpy())
+torch.mm(coo_tensor, b)
 end_time = time.time()
 execution_time = end_time - start_time
-print("np程序执行时间: ", execution_time, "秒")
+print("COO pytorch程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
-test_tensor.dot(b)
+csc_tensor.dot(b)
 end_time = time.time()
 execution_time = end_time - start_time
-print("scipy程序执行时间: ", execution_time, "秒")
+print("CSC scipy程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+csr_tensor.dot(b)
+end_time = time.time()
+execution_time = end_time - start_time
+print("CSR scipy程序执行时间: ", execution_time, "秒")
 
 # #测试spatha和普通torch.mm哪种实现方式更快
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
