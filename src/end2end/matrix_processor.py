@@ -185,27 +185,28 @@ def generate_sparse_matrix(rows, cols, sparsity):
     return matrix
 
 #测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
-a = generate_sparse_matrix(4096, 4096, 0.9)
+a = generate_sparse_matrix(4096, 4096, 0.98)
 b = torch.randn(4096, 4096)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
 test_tensor = scipy.sparse.csc_matrix(a)
+a.to(device)
+b.to(device)
 
 start_time = time.time()
-for _ in range(100):
-    torch.mm(a,b)
+torch.mm(a,b)
 end_time = time.time()
 execution_time = end_time - start_time
 print("普通torch.mm程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
-for _ in range(100):
-    torch.from_numpy(test_tensor @ b.numpy())
+torch.from_numpy(test_tensor @ b.numpy())
 end_time = time.time()
 execution_time = end_time - start_time
 print("np程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
-for _ in range(100):
-    test_tensor.dot(b)
+test_tensor.dot(b)
 end_time = time.time()
 execution_time = end_time - start_time
 print("scipy程序执行时间: ", execution_time, "秒")
