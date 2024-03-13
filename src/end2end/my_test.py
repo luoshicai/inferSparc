@@ -89,6 +89,20 @@ def sparse_torch_add_fwd_impl(ctx, inputs, output_sparsifiers):
 
 
 srnm = sparse_add(a, b)
+dense_add = torch.add(a, b)
+srnm_dense = srnm.wrapped_tensor.to_dense()
+masks, columns = nm_vector_mask_sparsify(srnm_dense, 2, 4, 128)
+new_srnm = sten.SparseTensorWrapper.wrapped_from_dense(
+        SrNMTensor(2, 4, 128, srnm_dense, masks, columns),
+        srnm_dense,
+        None,
+    )
+
+new_srnm_dense = new_srnm.wrapped_tensor.to_dense()
+print("srnm equal new_srnm: ", torch.equal(srnm_dense,new_srnm_dense))
+print("srnm allclose new_srnm: ", torch.allclose(srnm_dense,new_srnm_dense))
+
+
 d = torch.mm(srnm, c)
 
 e = torch.from_numpy(srnm.wrapped_tensor.to_dense().to(dtype=torch.half).detach().numpy() @ c.detach().numpy()).to(device="cuda:0").to(dtype=torch.half)
