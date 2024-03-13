@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import sten
 import scipy
@@ -91,7 +92,7 @@ def sparse_torch_add_fwd_impl(ctx, inputs, output_sparsifiers):
     return torch_tensor_to_srnm_random_fraction(
         KeepAll(), nm_vector_mask_sparsify(dense_out, out_sp.n, out_sp.m, out_sp.tileM)
     ) """
-    print("nm-dense mul")
+    # print("nm-dense mul")
     input1, input2 = inputs
     ctx.save_for_backward(input1, input2)
 
@@ -133,33 +134,94 @@ def process_matrix(matrix):
 ####################################################################################
 #################                     测试代码                      #################
 ####################################################################################
-    
-# 测试将矩阵转为CSC
-# 示例矩阵
-matrix = torch.tensor([[0, 0, 3, 0, 0], 
-                       [0, 0, 0, 4, 0], 
-                       [0, 2, 0, 0, 0], 
-                       [0, 0, 0, 0, 0], 
-                       [0, 0, 0, 0, 0]], dtype=torch.float32)
+def generate_sparse_matrix(rows, cols, sparsity):
+    # 计算非零元素的数量
+    num_nonzeros = int(rows * cols * (1 - sparsity))
 
-# 处理矩阵
-sparse_matrix = process_matrix(matrix)
-a = torch.rand(5,5)
-print(sparse_matrix)
+    # 生成非零元素的随机索引
+    nonzero_indices = np.random.choice(rows * cols, num_nonzeros, replace=False)
 
-spase_result = torch.mm(sparse_matrix, a)
-dense_result = torch.mm(matrix, a)
+    # 创建一个全零张量
+    matrix = torch.zeros((rows, cols))
 
-print("sparse result: ", spase_result)
-print("dense result: ", dense_result)
+    # 在随机索引位置填充非零元素
+    for idx in nonzero_indices:
+        row_idx = idx // cols
+        col_idx = idx % cols
+        # 生成非零元素的值
+        value = torch.rand(1)
+        # 填充非零元素
+        matrix[row_idx, col_idx] = value
 
-# 测试将矩阵转为NM
-a = torch.randn(768, 768, requires_grad=True)
-b = torch.randn(768, 768, requires_grad=True)
+    return matrix
 
-# 处理矩阵
-sparse_matrix1 = process_matrix(a)
-spase_result1 = torch.mm(sparse_matrix1, b)
-dense_result1 = torch.mm(a, b)
-print("sparse result1: ", spase_result1)
-print("dense result1: ", dense_result1)
+
+
+
+# # 测试将矩阵转为CSC
+# matrix = torch.tensor([[0, 0, 3, 0, 0], 
+#                        [0, 0, 0, 4, 0], 
+#                        [0, 2, 0, 0, 0], 
+#                        [0, 0, 0, 0, 0], 
+#                        [0, 0, 0, 0, 0]], dtype=torch.float32)
+# sparse_matrix = process_matrix(matrix)
+# a = torch.rand(5,5)
+# print(sparse_matrix)
+# spase_result = torch.mm(sparse_matrix, a)
+# dense_result = torch.mm(matrix, a)
+# print("sparse result: ", spase_result)
+# print("dense result: ", dense_result)
+
+
+# # 测试将矩阵转为NM
+# a = torch.randn(768, 768, requires_grad=True)
+# b = torch.randn(768, 768, requires_grad=True)
+# sparse_matrix1 = process_matrix(a)
+# spase_result1 = torch.mm(sparse_matrix1, b)
+# dense_result1 = torch.mm(a, b)
+# print("sparse result1: ", spase_result1)
+# print("dense result1: ", dense_result1)
+
+# #测试哪种实现方式更快
+# a = generate_sparse_matrix(1024, 4096, 0.9)
+# b = torch.randn(4096, 1024)
+# test_tensor = scipy.sparse.csc_matrix(a)
+
+# start_time = time.time()
+# for _ in range(100):
+#     torch.mm(a,b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("普通torch.mm程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# for _ in range(100):
+#     torch.from_numpy(test_tensor @ b.numpy())
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("np程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# for _ in range(100):
+#     test_tensor.dot(b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("scipy程序执行时间: ", execution_time, "秒")
+
+#测试哪种实现方式更快
+a = generate_sparse_matrix(1024, 4096, 0.5)
+b = torch.randn(4096, 1024)
+test_tensor = process_matrix(a)
+
+start_time = time.time()
+torch.mm(a,b)
+end_time = time.time()
+execution_time = end_time - start_time
+print("普通torch.mm程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+torch.mm(test_tensor, b)
+end_time = time.time()
+execution_time = end_time - start_time
+print("spatha程序执行时间: ", execution_time, "秒")
+
