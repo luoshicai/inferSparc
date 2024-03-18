@@ -805,7 +805,7 @@ class SrNMTensor:
 
 def nm_vector_mask_sparsify(tensor, n, m, tileM):
     #print("nm_vector_mask_sparsify", n, m, tileM)
-
+    
     impl_builder = (
                 group_n_m2
                 )
@@ -815,6 +815,7 @@ def nm_vector_mask_sparsify(tensor, n, m, tileM):
     mcol_k_p = math.ceil(ncols/m)
     m_fixed = 4
 
+    
     # Structures represent sparse data
     masks = torch.zeros(tensor.shape, dtype=torch.int32, device='cpu')
     columns = torch.zeros(nrows//tileM * A_num_cols_sp_pad//n*m_fixed,dtype=torch.int32, device='cpu')
@@ -833,7 +834,7 @@ def nm_vector_mask_sparsify(tensor, n, m, tileM):
 
     else:
         raise NotImplementedError("Only support layers of dimension 2 or 4")
-
+    
     #self.columns = columns
     #return masks
     return masks, columns

@@ -11,6 +11,7 @@ import time
 import math
 from heapq import nlargest
 from grouped_nmv_tensor import SrNMTensor, nm_vector_mask_sparsify
+from concurrent.futures import ThreadPoolExecutor
 
 class MyCscTensor:
     def __init__(self, data):
@@ -56,7 +57,7 @@ def convert_to_nm(tensor):
     """
     将密集矩阵转换为N:M格式的函数。
     """
-    n=2; m=4; tileM=128
+    n=2; m=100; tileM=128
     masks, columns = nm_vector_mask_sparsify(tensor, n, m, tileM)
     print("tensor.device: ", tensor.device)
     return sten.SparseTensorWrapper.wrapped_from_dense(
@@ -163,6 +164,39 @@ def process_matrix(matrix):
 ####################################################################################
 #################                   性能测试代码                    #################
 ####################################################################################
+def fill_nonzero_elements(args):
+    matrix, nonzero_indices, rows, cols = args
+    for idx in nonzero_indices:
+        row_idx = idx // cols
+        col_idx = idx % cols
+        # 生成非零元素的值
+        value = torch.rand(1)
+        # 填充非零元素
+        matrix[row_idx, col_idx] = value
+    return matrix
+
+def pral_generate_sparse_matrix(rows, cols, sparsity, num_threads=4):
+    # 计算非零元素的数量
+    num_nonzeros = int(rows * cols * (1 - sparsity))
+
+    # 生成非零元素的随机索引
+    nonzero_indices = np.random.choice(rows * cols, num_nonzeros, replace=False)
+
+    # 创建一个全零张量
+    matrix = torch.zeros((rows, cols))
+
+    # 准备参数列表
+    args_list = [(matrix, nonzero_indices[i::num_threads], rows, cols) for i in range(num_threads)]
+
+    # 使用线程池并行填充非零元素
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        results = list(executor.map(fill_nonzero_elements, args_list))
+
+    # 合并结果
+    final_matrix = sum(results)
+
+    return final_matrix
+
 def generate_sparse_matrix(rows, cols, sparsity):
     # 计算非零元素的数量
     num_nonzeros = int(rows * cols * (1 - sparsity))
@@ -185,10 +219,13 @@ def generate_sparse_matrix(rows, cols, sparsity):
     return matrix
 
 # 测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
-nums = 1024
-a = generate_sparse_matrix(nums, nums, 0.9)
+nums = 512
+sparsity = 0.98
+a = pral_generate_sparse_matrix(nums, nums, sparsity)
 b = torch.randn(nums, nums)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print("trans begin")
 
 # 转化为CSC格式
 csc_tensor = scipy.sparse.csc_matrix(a)
@@ -201,20 +238,45 @@ nonzero_indices = a.nonzero().t()
 values = a[nonzero_indices[0], nonzero_indices[1]]
 coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, a.size())
 
-a.to(device)
-b.to(device)
+# 转移至gpu上
+gpu_a = a.to(device)
+gpu_b = b.to(device)
+gpu_coo_tensor = coo_tensor.to(device)
 
+# 转化为NM格式
 start_time = time.time()
-torch.mm(a,b)
+nm_tensor = convert_to_nm(gpu_a)
 end_time = time.time()
 execution_time = end_time - start_time
-print("普通torch.mm程序执行时间: ", execution_time, "秒")
+print("convert time: ", execution_time, "秒")
+
+print("time begin")
+
+start_time = time.time()
+torch.mm(a, b)
+end_time = time.time()
+execution_time = end_time - start_time
+print("cpu 普通torch.mm程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+torch.mm(gpu_a,gpu_b)
+torch.cuda.synchronize()
+end_time = time.time()
+execution_time = end_time - start_time
+print("gpu 普通torch.mm程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
 torch.mm(coo_tensor, b)
 end_time = time.time()
 execution_time = end_time - start_time
-print("COO pytorch程序执行时间: ", execution_time, "秒")
+print("cpu COO pytorch程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+torch.mm(gpu_coo_tensor, gpu_b)
+torch.cuda.synchronize()
+end_time = time.time()
+execution_time = end_time - start_time
+print("gpu COO pytorch程序执行时间: ", execution_time, "秒")
 
 start_time = time.time()
 csc_tensor.dot(b)
@@ -227,6 +289,13 @@ csr_tensor.dot(b)
 end_time = time.time()
 execution_time = end_time - start_time
 print("CSR scipy程序执行时间: ", execution_time, "秒")
+
+start_time = time.time()
+torch.mm(nm_tensor, gpu_b)
+torch.cuda.synchronize()
+end_time = time.time()
+execution_time = end_time - start_time
+print("spatha程序执行时间: ", execution_time, "秒")
 
 # #测试spatha和普通torch.mm哪种实现方式更快
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
