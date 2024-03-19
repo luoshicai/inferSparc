@@ -57,7 +57,7 @@ def convert_to_nm(tensor):
     """
     将密集矩阵转换为N:M格式的函数。
     """
-    n=2; m=100; tileM=128
+    n=2; m=8; tileM=128
     masks, columns = nm_vector_mask_sparsify(tensor, n, m, tileM)
     print("tensor.device: ", tensor.device)
     return sten.SparseTensorWrapper.wrapped_from_dense(
@@ -219,19 +219,19 @@ def generate_sparse_matrix(rows, cols, sparsity):
     return matrix
 
 # 测试CSC矩阵乘法，scipy,np,torch.mm哪种实现方式更快
-nums = 512
-sparsity = 0.98
+nums = 4096
+sparsity = 0.75
 a = pral_generate_sparse_matrix(nums, nums, sparsity)
 b = torch.randn(nums, nums)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("trans begin")
 
-# 转化为CSC格式
-csc_tensor = scipy.sparse.csc_matrix(a)
+# # 转化为CSC格式
+# csc_tensor = scipy.sparse.csc_matrix(a)
 
-# 转化为CSR格式
-csr_tensor = scipy.sparse.csr_matrix(a)
+# # 转化为CSR格式
+# csr_tensor = scipy.sparse.csr_matrix(a)
 
 # 转化为COO格式
 nonzero_indices = a.nonzero().t()
@@ -250,52 +250,132 @@ end_time = time.time()
 execution_time = end_time - start_time
 print("convert time: ", execution_time, "秒")
 
-print("time begin")
+# 正式运行并测量时间
+total_execution_time = 0
+warm_iterations = 50
+num_iterations = 500
 
-start_time = time.time()
-torch.mm(a, b)
-end_time = time.time()
-execution_time = end_time - start_time
-print("cpu 普通torch.mm程序执行时间: ", execution_time, "秒")
+# 热身运行
+for _ in range(warm_iterations):
+    torch.mm(a, b)
 
-start_time = time.time()
-torch.mm(gpu_a,gpu_b)
-torch.cuda.synchronize()
-end_time = time.time()
-execution_time = end_time - start_time
-print("gpu 普通torch.mm程序执行时间: ", execution_time, "秒")
+for i in range(num_iterations):
+    start_time = time.time()
+    torch.mm(a, b)
+    end_time = time.time()
+    execution_time = end_time - start_time
+    total_execution_time += execution_time
 
-start_time = time.time()
-torch.mm(coo_tensor, b)
-end_time = time.time()
-execution_time = end_time - start_time
-print("cpu COO pytorch程序执行时间: ", execution_time, "秒")
+average_execution_time = total_execution_time / num_iterations
+print("cpu 普通torch.mm程序执行时间: ", average_execution_time, "秒")
 
-start_time = time.time()
-torch.mm(gpu_coo_tensor, gpu_b)
-torch.cuda.synchronize()
-end_time = time.time()
-execution_time = end_time - start_time
-print("gpu COO pytorch程序执行时间: ", execution_time, "秒")
 
-start_time = time.time()
-csc_tensor.dot(b)
-end_time = time.time()
-execution_time = end_time - start_time
-print("CSC scipy程序执行时间: ", execution_time, "秒")
+# 热身运行
+total_execution_time = 0
+for _ in range(warm_iterations):
+    torch.mm(gpu_a,gpu_b)
 
-start_time = time.time()
-csr_tensor.dot(b)
-end_time = time.time()
-execution_time = end_time - start_time
-print("CSR scipy程序执行时间: ", execution_time, "秒")
+for i in range(num_iterations):
+    start_time = time.time()
+    torch.mm(gpu_a,gpu_b)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    execution_time = end_time - start_time
+    total_execution_time += execution_time
 
-start_time = time.time()
-torch.mm(nm_tensor, gpu_b)
-torch.cuda.synchronize()
-end_time = time.time()
-execution_time = end_time - start_time
-print("spatha程序执行时间: ", execution_time, "秒")
+average_execution_time = total_execution_time / num_iterations
+print("gpu 普通torch.mm程序执行时间: ", average_execution_time, "秒")
+
+
+# 热身运行
+total_execution_time = 0
+for _ in range(warm_iterations):
+    torch.mm(coo_tensor, b)
+
+for i in range(num_iterations):
+    start_time = time.time()
+    torch.mm(coo_tensor, b)
+    end_time = time.time()
+    execution_time = end_time - start_time
+    total_execution_time += execution_time
+
+average_execution_time = total_execution_time / num_iterations
+print("cpu COO pytorch程序执行时间: ", average_execution_time, "秒")
+
+# 热身运行
+total_execution_time = 0
+for _ in range(warm_iterations):
+    torch.mm(gpu_coo_tensor, gpu_b)
+
+for i in range(num_iterations):
+    start_time = time.time()
+    torch.mm(gpu_coo_tensor, gpu_b)
+    end_time = time.time()
+    execution_time = end_time - start_time
+    total_execution_time += execution_time
+
+average_execution_time = total_execution_time / num_iterations
+print("gpu COO pytorch程序执行时间: ", average_execution_time, "秒")
+
+# 热身运行
+total_execution_time = 0
+for _ in range(warm_iterations):
+    torch.mm(nm_tensor, gpu_b)
+
+for i in range(num_iterations):
+    start_time = time.time()
+    torch.mm(nm_tensor, gpu_b)
+    end_time = time.time()
+    execution_time = end_time - start_time
+    total_execution_time += execution_time
+
+average_execution_time = total_execution_time / num_iterations
+print("spatha程序执行时间: ", average_execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(a, b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("cpu 普通torch.mm程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(gpu_a,gpu_b)
+# torch.cuda.synchronize()
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("gpu 普通torch.mm程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(coo_tensor, b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("cpu COO pytorch程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(gpu_coo_tensor, gpu_b)
+# torch.cuda.synchronize()
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("gpu COO pytorch程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# csc_tensor.dot(b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("CSC scipy程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# csr_tensor.dot(b)
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("CSR scipy程序执行时间: ", execution_time, "秒")
+
+# start_time = time.time()
+# torch.mm(nm_tensor, gpu_b)
+# torch.cuda.synchronize()
+# end_time = time.time()
+# execution_time = end_time - start_time
+# print("spatha程序执行时间: ", execution_time, "秒")
 
 # #测试spatha和普通torch.mm哪种实现方式更快
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
