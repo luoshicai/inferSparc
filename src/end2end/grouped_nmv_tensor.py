@@ -796,12 +796,12 @@ class SrNMTensor:
                 self.tileM
             )
         # initialize with ones
-        dense = torch.ones((self.nrows, self.ncols), dtype=torch.float32, device='cpu') #self.values.dtype
+        dense = torch.zeros((self.nrows, self.ncols), dtype=torch.float32, device='cpu') #self.values.dtype
 
         # uncomment to keep initial values
-        #func(dense.data_ptr(), self.values.cpu().to(dtype=torch.float32).data_ptr(), self.columns.cpu().data_ptr(), self.metadata.cpu().data_ptr())
+        func(dense.data_ptr(), self.values.cpu().to(dtype=torch.float32).data_ptr(), self.columns.cpu().data_ptr(), self.metadata.cpu().data_ptr())
 
-        return dense.to(device=self.device).half()
+        return dense.to(device=self.device)
 
 def nm_vector_mask_sparsify(tensor, n, m, tileM):
     #print("nm_vector_mask_sparsify", n, m, tileM)
