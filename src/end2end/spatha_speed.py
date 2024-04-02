@@ -231,16 +231,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # # 转化为CSR格式
 # csr_tensor = scipy.sparse.csr_matrix(a)
 
-# # 转化为COO格式
-# nonzero_indices = a.nonzero().t()
-# values = a[nonzero_indices[0], nonzero_indices[1]]
-# coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, a.size())
+# 转化为COO格式
+nonzero_indices = a.nonzero().t()
+values = a[nonzero_indices[0], nonzero_indices[1]]
+coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, a.size())
+csr_tensor = coo_tensor.to_sparse_csr()
+a.to_sparse_csr()
 
 # 转移至gpu上
 gpu_a = a.to(device)
 gpu_b = b.to(device)
 # nm_tensor = convert_to_nm(a)
-# gpu_coo_tensor = coo_tensor.to(device)
+gpu_coo_tensor = coo_tensor.to(device)
 
 # # 转化为NM格式
 # start_time = time.time()
@@ -254,7 +256,7 @@ print(1)
 # 正式运行并测量时间
 total_execution_time = 0
 warm_iterations = 100
-num_iterations = 10000
+num_iterations = 2000
 
 # # 热身运行
 # for _ in range(warm_iterations):
