@@ -132,7 +132,7 @@ def process_matrix(matrix):
 
 
 ####################################################################################
-#################                   性能测试代码                    #################
+#################                   正确性测试代码                    #################
 ####################################################################################
 def generate_sparse_matrix(rows, cols, sparsity):
     # 计算非零元素的数量
@@ -192,4 +192,13 @@ print(gpu_a)
 print(dense_srnm)
 print(num_differing, percentage_differing)
 
+def calculate_sparsity(tensor):
+    total_elements = tensor.numel()  # 获取张量中的元素总数
+    non_zero_elements = torch.count_nonzero(tensor)  # 获取张量中非零元素的数量
+    sparsity = (1 - non_zero_elements / total_elements) * 100  # 计算稀疏度
+    return sparsity.item()  # 返回稀疏度的数值
+
+# 示例
+sparsity = calculate_sparsity(dense_srnm)
+print(f"Tensor sparsity: {sparsity}%")
 

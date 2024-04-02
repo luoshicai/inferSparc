@@ -5,6 +5,7 @@ src/end2end/end2end
 src/end2end/spatha_mod
 src/end2end/spatha.egg-info
 src/end2end/sten
+src/end2end/CLASP
 venom/
 *.pyc
 __pycache__/
