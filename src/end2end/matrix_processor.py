@@ -88,23 +88,64 @@ def compare_tensors_with_tolerance(tensor_a, tensor_b, tolerance=1e-03):
 ####################################################################################
 #################                   稀疏格式类                      #################
 ####################################################################################
+class MyCooTensor:
+    def __init__(self, data):
+        self.data = data
+
+    def to_dense(self):
+        return self.data.todense()
+    
 class MyCscTensor:
     def __init__(self, data):
         self.data = data
 
     def to_dense(self):
-        return torch.from_numpy(self.data.todense())
+        return self.data.todense()
     
+class MyCsrTensor:
+    def __init__(self, data):
+        self.data = data
+
+    def to_dense(self):
+        return self.data.todense()
 
 ####################################################################################
 #################                   格式转化函数                    #################
 ####################################################################################
+def convert_to_coo(tensor):
+    """
+    将密集矩阵转换为COO格式的函数。
+    """
+    nonzero_indices = tensor.nonzero().t()
+    values = tensor[nonzero_indices[0], nonzero_indices[1]]    
+    return sten.SparseTensorWrapper.wrapped_from_dense(
+        MyCooTensor(torch.sparse_coo_tensor(nonzero_indices, values, tensor.size())),
+        tensor,
+        None
+    )
+
 def convert_to_csc(tensor):
     """
     将密集矩阵转换为CSC格式的函数。
     """
+    nonzero_indices = tensor.nonzero().t()
+    values = tensor[nonzero_indices[0], nonzero_indices[1]]
+    coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, tensor.size())
     return sten.SparseTensorWrapper.wrapped_from_dense(
-        MyCscTensor(scipy.sparse.csc_matrix(tensor)),
+        MyCscTensor(coo_tensor.to_sparse_csc()),
+        tensor,
+        None
+    )
+
+def convert_to_csr(tensor):
+    """
+    将密集矩阵转换为CSR格式的函数。
+    """
+    nonzero_indices = tensor.nonzero().t()
+    values = tensor[nonzero_indices[0], nonzero_indices[1]]
+    coo_tensor = torch.sparse_coo_tensor(nonzero_indices, values, tensor.size())
+    return sten.SparseTensorWrapper.wrapped_from_dense(
+        MyCsrTensor(coo_tensor.to_sparse_csr()),
         tensor,
         None
     )
@@ -127,14 +168,14 @@ def convert_to_nm(tensor):
 ####################################################################################
 @sten.register_fwd_op_impl(
     operator=torch.mm,
-    inp=(MyCscTensor, torch.Tensor),
+    inp=(MyCooTensor, torch.Tensor),
     out=[(sten.KeepAll, torch.Tensor)],
 )
 def torch_mm_fwd_impl(ctx, inputs, output_sparsifiers):
-    print("csc-dense mul")
+    print("coo-dense mul")
     input1, input2 = inputs
     ctx.save_for_backward(input1, input2)
-    output = torch.from_numpy(input1.wrapped_tensor.data @ input2.numpy())
+    output = torch.mm(input1, input2)
     return output
 
 @sten.register_fwd_op_impl(
@@ -152,7 +193,7 @@ def sparse_torch_add_fwd_impl(ctx, inputs, output_sparsifiers):
     return torch_tensor_to_srnm_random_fraction(
         KeepAll(), nm_vector_mask_sparsify(dense_out, out_sp.n, out_sp.m, out_sp.tileM)
     ) """
-    # print("nm-dense mul")
+    print("nm-dense mul")
     input1, input2 = inputs
     ctx.save_for_backward(input1, input2)
 
@@ -185,11 +226,7 @@ def process_matrix(matrix):
     print(f"稀疏比率: {sparse_ratio}%")
     if sparse_ratio > 80:
         print("转换为CSC格式")
-        return convert_to_csc(matrix)
+        return convert_to_coo(matrix)
     else:
         print("转换为N:M格式")
         return convert_to_nm(matrix)
-
-
-
-
