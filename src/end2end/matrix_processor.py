@@ -43,6 +43,9 @@ def generate_sparse_matrix(rows, cols, sparsity):
     # 计算非零元素的数量
     num_nonzeros = int(rows * cols * (1 - sparsity))
 
+    # # 设置随机种子
+    # np.random.seed(2)
+    
     # 生成非零元素的随机索引
     nonzero_indices = np.random.choice(rows * cols, num_nonzeros, replace=False)
 
@@ -61,28 +64,19 @@ def generate_sparse_matrix(rows, cols, sparsity):
     return matrix
 
 def compare_tensors_with_tolerance(tensor_a, tensor_b, tolerance=1e-03):
-    """
-    Compare two PyTorch tensors with a tolerance for differences and calculate the number and percentage
-    of elements that differ beyond this tolerance.
-
-    Args:
-    - tensor_a (torch.Tensor): The first tensor to compare.
-    - tensor_b (torch.Tensor): The second tensor to compare.
-    - tolerance (float): The tolerance within which elements are considered equal.
-
-    Returns:
-    - tuple: A tuple containing the number of elements differing beyond the tolerance and their percentage.
-    """
-    # Calculate the absolute difference and check against the tolerance
-    num_differing = torch.sum(torch.abs(tensor_a - tensor_b) > tolerance).item()
+    # 计算张量元素绝对值之差
+    diff = torch.abs(tensor_a - tensor_b)
     
-    # Calculate the total number of elements in the tensor
-    total_elements = tensor_a.numel()
+    # 计算超过容差的元素数量
+    num_diff_elements = (diff > tolerance).sum().item()
     
-    # Calculate the percentage of differing elements
-    percentage_differing = (num_differing / total_elements) * 100
+    # 计算tensor_a中非零元素的数量
+    num_nonzero_elements = (tensor_a != 0).sum().item()
     
-    return num_differing, percentage_differing
+    # 计算百分比
+    percentage_diff = (num_diff_elements / num_nonzero_elements) * 100
+    
+    return num_diff_elements, percentage_diff
 
 
 ####################################################################################
@@ -148,7 +142,7 @@ def convert_to_nm(tensor):
     """
     n=2; m=4; tileM=128
     masks, columns = nm_vector_mask_sparsify(tensor, n, m, tileM)
-    print("tensor.device: ", tensor.device)
+    # print("tensor.device: ", tensor.device)
     return sten.SparseTensorWrapper.wrapped_from_dense(
         SrNMTensor(n, m, tileM, tensor, masks, columns, tensor.device),
         tensor,
@@ -167,7 +161,31 @@ def torch_mm_fwd_impl(ctx, inputs, output_sparsifiers):
     # print("coo-dense mul")
     input1, input2 = inputs
     ctx.save_for_backward(input1, input2)
-    output = torch.mm(input1, input2)
+    output = torch.sparse.mm(input1.data, input2)
+    return output
+
+@sten.register_fwd_op_impl(
+    operator=torch.mm,
+    inp=(MyCscTensor, torch.Tensor),
+    out=[(sten.KeepAll, torch.Tensor)],
+)
+def torch_mm_fwd_impl(ctx, inputs, output_sparsifiers):
+    # print("csc-dense mul")
+    input1, input2 = inputs
+    ctx.save_for_backward(input1, input2)
+    output = torch.sparse.mm(input1.data, input2)
+    return output
+
+@sten.register_fwd_op_impl(
+    operator=torch.mm,
+    inp=(MyCsrTensor, torch.Tensor),
+    out=[(sten.KeepAll, torch.Tensor)],
+)
+def torch_mm_fwd_impl(ctx, inputs, output_sparsifiers):
+    # print("csr-dense mul")
+    input1, input2 = inputs
+    ctx.save_for_backward(input1, input2)
+    output = torch.sparse.mm(input1.data, input2)
     return output
 
 @sten.register_fwd_op_impl(
@@ -224,8 +242,8 @@ def process_matrix(matrix):
         return convert_to_nm(matrix)
 
 
-rows = 1024
-cols = 1024
+rows = 4096
+cols = 4096
 sparsity = 0.5
 a = generate_sparse_matrix(rows, cols, sparsity)
 b = torch.randn(cols, rows)
@@ -233,116 +251,99 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 gpu_a = a.to(device)
 gpu_b = b.to(device)
-coo_tensor = gpu_a.to_sparse_coo()
-csr_tensor = gpu_a.to_sparse_csr()
-csc_tensor = gpu_a.to_sparse_csc()
 
-# 正式运行并测量时间
-warm_iterations = 100
-num_iterations = 4000
+print("1")
 
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.mm(gpu_a, gpu_b)
-
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.mm(gpu_a, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
-
-average_execution_time = total_execution_time / num_iterations
-print("torch.mm程序执行时间: ", average_execution_time, "秒")
-
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.mm(coo_tensor, gpu_b)
-
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.mm(coo_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
-
-average_execution_time = total_execution_time / num_iterations
-print("coo torch.mm程序执行时间: ", average_execution_time, "秒")
-
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.sparse.mm(coo_tensor, gpu_b)
-
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.sparse.mm(coo_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
-
-average_execution_time = total_execution_time / num_iterations
-print("coo torch.sparse.mm程序执行时间: ", average_execution_time, "秒")
+# coo_tensor = convert_to_coo(gpu_a)
+# csr_tensor = convert_to_csr(gpu_a)
+# csc_tensor = convert_to_csc(gpu_a)
+nm_tensor = convert_to_nm(gpu_a)
 
 
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.mm(csr_tensor, gpu_b)
+srnm_dense = nm_tensor.wrapped_tensor.to_dense()
+num_differing, percentage_differing  = compare_tensors_with_tolerance(gpu_a, srnm_dense)
+sparse_ratio = calculate_sparse_ratio(srnm_dense)
+print("转化后与原矩阵不同的元素占原矩阵非零元素的百分比为：", percentage_differing)
+print("不同元素的数量为：", num_differing)
+print("转化后矩阵的稀疏比率为：", sparse_ratio)
+print(gpu_a)
+print(srnm_dense)
 
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.mm(csr_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
+# # 正式运行并测量时间
+# warm_iterations = 100
+# num_iterations = 4000
 
-average_execution_time = total_execution_time / num_iterations
-print("csr torch.mm程序执行时间: ", average_execution_time, "秒")
+# # 热身运行
+# total_execution_time = 0
+# for _ in range(warm_iterations):
+#     torch.mm(gpu_a, gpu_b)
 
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.sparse.mm(csr_tensor, gpu_b)
+# for i in range(num_iterations):
+#     start_time = time.time()
+#     torch.mm(gpu_a, gpu_b)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     total_execution_time += execution_time
 
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.sparse.mm(csr_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
+# average_execution_time = total_execution_time / num_iterations
+# print("torch.mm程序执行时间: ", average_execution_time, "秒")
 
-average_execution_time = total_execution_time / num_iterations
-print("csr torch.sparse.mm程序执行时间: ", average_execution_time, "秒")
+# # 热身运行
+# total_execution_time = 0
+# for _ in range(warm_iterations):
+#     torch.mm(coo_tensor, gpu_b)
 
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.mm(csc_tensor, gpu_b)
+# for i in range(num_iterations):
+#     start_time = time.time()
+#     torch.mm(coo_tensor, gpu_b)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     total_execution_time += execution_time
 
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.mm(csc_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
+# average_execution_time = total_execution_time / num_iterations
+# print("coo torch.mm程序执行时间: ", average_execution_time, "秒")
 
-average_execution_time = total_execution_time / num_iterations
-print("csc torch.mm程序执行时间: ", average_execution_time, "秒")
+# # 热身运行
+# total_execution_time = 0
+# for _ in range(warm_iterations):
+#     torch.mm(csr_tensor, gpu_b)
 
-# 热身运行
-total_execution_time = 0
-for _ in range(warm_iterations):
-    torch.sparse.mm(csc_tensor, gpu_b)
+# for i in range(num_iterations):
+#     start_time = time.time()
+#     torch.mm(csr_tensor, gpu_b)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     total_execution_time += execution_time
 
-for i in range(num_iterations):
-    start_time = time.time()
-    torch.sparse.mm(csc_tensor, gpu_b)
-    end_time = time.time()
-    execution_time = end_time - start_time
-    total_execution_time += execution_time
+# average_execution_time = total_execution_time / num_iterations
+# print("csr torch.mm程序执行时间: ", average_execution_time, "秒")
 
-average_execution_time = total_execution_time / num_iterations
-print("csc torch.sparse.mm程序执行时间: ", average_execution_time, "秒")
+# # 热身运行
+# total_execution_time = 0
+# for _ in range(warm_iterations):
+#     torch.mm(csc_tensor, gpu_b)
+
+# for i in range(num_iterations):
+#     start_time = time.time()
+#     torch.mm(csc_tensor, gpu_b)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     total_execution_time += execution_time
+
+# average_execution_time = total_execution_time / num_iterations
+# print("csc torch.mm程序执行时间: ", average_execution_time, "秒")
+
+# # 热身运行
+# total_execution_time = 0
+# for _ in range(warm_iterations):
+#     torch.mm(nm_tensor, gpu_b)
+
+# for i in range(num_iterations):
+#     start_time = time.time()
+#     torch.mm(nm_tensor, gpu_b)
+#     end_time = time.time()
+#     execution_time = end_time - start_time
+#     total_execution_time += execution_time
+
+# average_execution_time = total_execution_time / num_iterations
+# print("spatha程序执行时间: ", average_execution_time, "秒")

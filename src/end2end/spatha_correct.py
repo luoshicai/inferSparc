@@ -158,7 +158,7 @@ def generate_sparse_matrix(rows, cols, sparsity):
 def compare_tensors_with_tolerance(tensor_a, tensor_b, tolerance=1e-03):
     """
     Compare two PyTorch tensors with a tolerance for differences and calculate the number and percentage
-    of elements that differ beyond this tolerance.
+    of elements that differ beyond this tolerance among the non-zero elements of the first tensor.
 
     Args:
     - tensor_a (torch.Tensor): The first tensor to compare.
@@ -166,21 +166,31 @@ def compare_tensors_with_tolerance(tensor_a, tensor_b, tolerance=1e-03):
     - tolerance (float): The tolerance within which elements are considered equal.
 
     Returns:
-    - tuple: A tuple containing the number of elements differing beyond the tolerance and their percentage.
+    - tuple: A tuple containing the number of elements differing beyond the tolerance among the non-zero elements of tensor_a, and their percentage.
     """
     # Calculate the absolute difference and check against the tolerance
-    num_differing = torch.sum(torch.abs(tensor_a - tensor_b) > tolerance).item()
+    difference = torch.abs(tensor_a - tensor_b)
+    differing_elements_mask = difference > tolerance
     
-    # Calculate the total number of elements in the tensor
-    total_elements = tensor_a.numel()
+    # Calculate the number of non-zero elements in tensor_a
+    non_zero_elements_mask = tensor_a != 0
     
-    # Calculate the percentage of differing elements
-    percentage_differing = (num_differing / total_elements) * 100
+    # Calculate the number of differing elements among the non-zero elements of tensor_a
+    num_differing = torch.sum(differing_elements_mask & non_zero_elements_mask).item()
+    
+    # Calculate the total number of non-zero elements in tensor_a
+    total_non_zero_elements = torch.sum(non_zero_elements_mask).item()
+    
+    # Calculate the percentage of differing elements among the non-zero elements
+    if total_non_zero_elements > 0:
+        percentage_differing = (num_differing / total_non_zero_elements) * 100
+    else:
+        percentage_differing = 0  # Avoid division by zero if tensor_a has no non-zero elements
     
     return num_differing, percentage_differing
 
-nums = 512
-sparsity = 0.5
+nums = 1024
+sparsity = 0.4
 a = generate_sparse_matrix(nums, nums, sparsity)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 gpu_a = a.to(device)

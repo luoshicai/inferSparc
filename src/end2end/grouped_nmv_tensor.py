@@ -384,7 +384,7 @@ def to_dense(dense_shape, dense_dtype, n, m, tileM):
         #include <vector>
         #include <numeric>
         #include <chrono>
-
+        
         using namespace std;
 
 
@@ -437,15 +437,14 @@ def to_dense(dense_shape, dense_dtype, n, m, tileM):
                                             }}
                                         }}
                                     }}
-
+                                    
                                     for(int mcol_ii=0; mcol_ii<mcol_kk; mcol_ii++){{
                                         for(int mbrow_iii=0; mbrow_iii<{mrow_m}; mbrow_iii++){{
                                             for(int n_i=0; n_i<{n}; n_i++){{
                                                 unsigned int index = columns[mcol_ii*{m_fixed} + indexes[mcol_ii*{mrow_m}*{n}+mbrow_iii*{n}+n_i]];
 
                                                 if((mcol_i*{m}*mcol_kk + mcol_ii*{m} + index) < {ncols}){{
-                                                    hA_dense[
-                                                        bm_i*{bm}*{ncols} +
+                                                    int a =                                                         bm_i*{bm}*{ncols} +
                                                         mbrow_i*{mbrow}*{ncols} +
                                                         mbrow_i2*{brow_fixed}*{ncols} +
                                                         brow_i*{brow}*{ncols} +
@@ -453,9 +452,8 @@ def to_dense(dense_shape, dense_dtype, n, m, tileM):
                                                         mbrow_ii*{mrow_m}*{ncols} +
                                                         mcol_ii*{m} +
                                                         mbrow_iii*{ncols} +
-                                                        index] =
-                                                    hA_values[
-                                                        bm_i*{bm}*{A_num_cols_sp_pad} +
+                                                        index;
+                                                    int b =                                                         bm_i*{bm}*{A_num_cols_sp_pad} +
                                                         mbrow_i*{mbrow}*{A_num_cols_sp_pad}+
                                                         mbrow_i2*{brow_fixed}*{A_num_cols_sp_pad}+
                                                         brow_i*{brow}*{nelems}/{mrow_m}+
@@ -463,7 +461,10 @@ def to_dense(dense_shape, dense_dtype, n, m, tileM):
                                                         mbrow_ii*{mrow_m}*{n} +
                                                         mcol_ii*{n}*{brow} +
                                                         mbrow_iii*{n} +
-                                                        n_i];
+                                                        n_i;
+
+                                                    hA_dense[a] = hA_values[b];
+                                                    
                                                 }}
                                             }}
                                         }}
@@ -750,7 +751,7 @@ class SrNMTensor:
         self.metadata = None
 
         self.to_sparse_sr_nm(dense_.cpu().to(dtype=torch.float32), mask_)
-        #self.to_sparse_sr_nm(dense_.to(dtype=torch.float32), mask_)
+        # self.to_sparse_sr_nm(dense_.to(dtype=torch.float32), mask_)
         #self.dense = None
 
     def to_sparse_sr_nm(self, dense_, mask_):
@@ -797,10 +798,16 @@ class SrNMTensor:
             )
         # initialize with ones
         dense = torch.zeros((self.nrows, self.ncols), dtype=torch.float32, device='cpu') #self.values.dtype
+        
+        # shape = self.values.shape
+        # print(shape)
+        
+        cpu_value = self.values.cpu().to(dtype=torch.float32)
 
+        # print(hex(cpu_value.data_ptr()))
         # uncomment to keep initial values
-        func(dense.data_ptr(), self.values.cpu().to(dtype=torch.float32).data_ptr(), self.columns.cpu().data_ptr(), self.metadata.cpu().data_ptr())
-
+        func(dense.data_ptr(), cpu_value.data_ptr(), self.columns.cpu().data_ptr(), self.metadata.cpu().data_ptr())
+        
         return dense.to(device=self.device)
 
 def nm_vector_mask_sparsify(tensor, n, m, tileM):
