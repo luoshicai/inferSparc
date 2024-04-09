@@ -783,7 +783,8 @@ class SrNMTensor:
 
         self.columns  = self.columns.to(device=self.device)
         self.metadata = self.metadata.to(device=self.device)
-        self.values   = self.values.to(device=self.device).half()
+        # self.values   = self.values.to(device=self.device).half()
+        self.values   = self.values.to(device=self.device)
 
     def to_dense(self):
         impl_builder = (
