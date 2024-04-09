@@ -94,6 +94,21 @@ def check_A100_available():
                 return True
     return False
 
+def check_matrix_size(inputs):
+    """
+    检查矩阵的形状是否可以转化为n:m格式。
+    
+    Returns:
+        bool: 如果可以返回 True, 否则返回 False。
+    """
+    rows, cols = inputs
+
+    # 检查rows和cols是否是128的倍数
+    if rows % 128 == 0 and cols % 128 == 0:
+        return True
+    else:
+        return False
+
 def get_n_m(sparse_ratio):
     # 如果稀疏度在0~0.6，则n:m为2：4
     if sparse_ratio < 60:
@@ -271,8 +286,11 @@ def process_matrix(matrix):
     # 判断A100是否可用
     A100_available = check_A100_available()
 
+    # 判断矩阵的形状是否可以转化为n:m
+    matrix_suitable = check_matrix_size(matrix.size())
+
     # 硬件条件可用的情况下，判断nm格式对精度的影响
-    if A100_available:
+    if A100_available & matrix_suitable:
         nm_tensor = convert_to_nm(matrix, sparse_ratio)
         srnm_dense = nm_tensor.wrapped_tensor.to_dense()
         num_differing, percentage_differing  = compare_tensors_with_tolerance(matrix, srnm_dense)
@@ -290,16 +308,16 @@ def process_matrix(matrix):
     return matrix
 
 
-# nums = 4096
-# sparsity = 0.995
-# a = generate_sparse_matrix(nums, nums, sparsity)
-# b = torch.randn(nums, nums)
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+nums = 1024
+sparsity = 0.5
+a = generate_sparse_matrix(nums, nums, sparsity)
+b = torch.randn(nums, nums)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# gpu_a = a.to(device)
-# gpu_b = b.to(device)
+gpu_a = a.to(device)
+gpu_b = b.to(device)
 
-# result_tensor = process_matrix(gpu_a)
+result_tensor = process_matrix(gpu_a)
 
 # nm_tensor = convert_to_nm(gpu_a, sparsity*100)
 
